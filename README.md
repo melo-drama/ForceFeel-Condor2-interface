@@ -5,7 +5,8 @@ System converts Condor2 UDP telemetry strings into Realteus Forcefeel cushion mo
 Usage:
 - Activate Condor2 UDP telemetry interface => ~/Condor2/Settings/UDP.ini:
   [General] => Enabled=1, [Connection] => Host=127.0.0.1, Port=55278, [Misc] => SendIntervalMs=10, ExtendedData=1
--Check that ForceFeel connection and motors work as expected, find the correct COM-port also
+
+- Check that ForceFeel connection and motors work as expected, find the correct COM-port also
   - Main window: Edit-Test ForceFeel controls =>
     - Turn ForceFeel ON, select PC mode
     - Leave baudrate to 115200, select COM port that you expect to be your ForceFeel COM port
