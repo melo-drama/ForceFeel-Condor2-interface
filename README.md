@@ -23,6 +23,7 @@ Usage:
          - Exit like this: File - Exit (read: that X in the right up corner doesn't save the selected files into the default.ini file)
   - List of files you need:
     1) *.py files mentioned in the main branch  (if you use this app via python editor) or *.exe that is created with these *.py files
+      - Main file is 'Condor2_shaker_main.py'
     2) *.ini files, stored under same folder than 1) files:
         - default.ini
         - ff_port_data.ini
