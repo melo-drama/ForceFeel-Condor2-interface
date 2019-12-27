@@ -1,0 +1,9 @@
+Parameter,filtercoeff,flt_min_limit,flt_max_limit,mot_min_limit,mot_max_limit,motors
+rollrate_left,2,0.05,0.3,30,50,M0M2
+rollrate_right,2,0.05,0.3,30,50,M1M3
+pitchrate_up,1,0.1,0.4,20,50,M0M1
+pitchrate_down,1,0.1,0.3,20,50,M4M5
+gforce,1,1.5,4.0,30,70,M0M1M2M3
+yawrate_left,1,0.1,0.4,40,60,M2
+yawrate_right,1,0.1,0.4,40,60,M3
+Flutter,1,50.0,75.0,40,80,M0M1M2M3M4M5M6M7
