@@ -25,8 +25,8 @@ Usage:
   - List of files you need:
     1) *.py files mentioned in the main branch  (if you use this app via python editor) or *.exe that is created with these *.py files
       - Main file is 'Condor2_shaker_main.py'
-    2) *.ini files, stored under same folder than 1) files:
+    2) *.ini files, stored under same folder that 1) files:
         - default.ini
         - ff_port_data.ini
     3) default.mon -file: this is default monitor file, you can modify this or create new ones. All ?.mon files should be located under same folder that 1) files are 
-    4) default.prof -file: this is default profile file, you can modify this file also or create (each plane type?) dedicated files. These files should be also located under same folder than 1) files are 
+    4) default.prof -file: this is default profile file, you can modify this file also or create (each plane type?) dedicated files. These files should be also located under same folder that 1) files are 
