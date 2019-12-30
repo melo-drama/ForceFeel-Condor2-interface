@@ -1,14 +1,12 @@
 time
 airspeed
-altitude
-vario
 rollrate_left
 rollrate_right
 pitchrate_up
 pitchrate_down
 gforce
-height
 wheelheight
 yawrate_left
 yawrate_right
 Flutter
+Wheelshake

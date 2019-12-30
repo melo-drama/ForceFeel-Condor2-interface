@@ -6,6 +6,8 @@ import Condor2_udp_com as udp
 import os
 from tkinter import messagebox
 from tkinter import filedialog
+import queue
+import threading
 
 
 class Prof_window(tk.Frame):
@@ -40,12 +42,18 @@ class Prof_window(tk.Frame):
         self.get_monfile_list()
         self.get_proffile_list()
 
+        self.motor_calibration_table = []
+        for mot in range(8):
+            self.motor_calibration_table.append(1.0)
+
         # --- get and read default.init file ----------
         if not os.path.isfile('default.ini'):   # --- this function is not done yet (27.12.2019)
             pass
-        self.filename_table = self.read_init_file('default.ini')
+        self.filename_table = self.profile.read_init_file('default.ini')
         self.all_parameters_list = self.load_all_parameters()
         self.profile_parameter_list = self.profile.load_profile_file(self.filename_table[1][1])
+        if len(self.filename_table) > 3:
+            self.motor_calibration_table = self.profile.get_motor_calibration_table(self.filename_table)
 
         for cell in range(len(self.all_parameters_list)):
             self.new_prof_param_list.append(self.all_parameters_list[cell])
@@ -235,6 +243,15 @@ class Prof_window(tk.Frame):
         # hide this grid as default
         self.prof_edit_frame.grid_remove()
     # ------------- end of class Prof_window(tk.Frame) init ------------------------------------------
+
+    # def get_motor_calibration_table(self, filename_table):
+    #     mot_gain_list = []
+    #     motor_gain_str = filename_table[3][1]
+    #     motor_gain_str = motor_gain_str[1:-1]
+    #     mot_gain_str_list = list(motor_gain_str.split(','))
+    #     for cell in mot_gain_str_list:
+    #         mot_gain_list.append(float(cell))
+    #     return mot_gain_list
 
     def callback_monFunc(self, event):
         self.load_monwin_file()
@@ -598,10 +615,25 @@ class Prof_window(tk.Frame):
             self.combo_select_profile.grid()
             self.combo_select_profile.focus()
 
-    def update_default_ini(self):
-        filename_table = self.read_init_file('default.ini')
+    def update_default_ini(self, mot_calib_table=None):
+        filename_table = self.profile.read_init_file('default.ini')
         filename_table[0][1] = self.combo_select_monwin.get()
         filename_table[1][1] = self.combo_select_profile.get()
+        calibration_table = []
+        if mot_calib_table == None:
+            calibration_table = self.motor_calibration_table
+        else:
+            calibration_table = mot_calib_table
+        mot_calib_str = '['
+        for cell in calibration_table:
+            mot_calib_str = mot_calib_str + str(cell) + ','
+        mot_calib_str = mot_calib_str[:-1]
+        mot_calib_str = mot_calib_str + ']'
+        if len(filename_table) > 3:
+            filename_table[3][1] = mot_calib_str
+        elif len(filename_table) == 3:
+            new_list = ['motor_calibration_gains', mot_calib_str]
+            filename_table.append(new_list)
         file_list = []
         no_rows = len(filename_table)
         for row in range(no_rows):
@@ -622,6 +654,29 @@ class Prof_window(tk.Frame):
     def window_name(self, window_name):
         self.master.title(window_name)
 
+    # def read_init_file(self, filename):
+    #     name_table = []
+    #     filename_table =[]
+    #     try:
+    #         with open(filename, 'r') as csv_file:
+    #             filecontent = csv_file.readlines()
+    #             for line in filecontent:
+    #                 current_line = line[:-1]
+    #                 name_table.append(current_line)
+    #     except IOError:
+    #         print("I/O error")
+    #     no_rows = len(name_table)
+    #     for row in range(no_rows):
+    #         filename_table.append(list(name_table[row].split('=')))
+    #     return filename_table
+# --------- end of class Prof_window(tk.Frame) ------------------------------------
+
+
+class Profiler:
+    def __init__(self):
+        self.profile_table = self.load_profile_file('default.prof')
+        self.monitor_table = self.load_monitor_window('default.mon')
+
     def read_init_file(self, filename):
         name_table = []
         filename_table =[]
@@ -637,13 +692,15 @@ class Prof_window(tk.Frame):
         for row in range(no_rows):
             filename_table.append(list(name_table[row].split('=')))
         return filename_table
-# --------- end of class Prof_window(tk.Frame) ------------------------------------
 
-
-class Profiler:
-    def __init__(self):
-        self.profile_table = self.load_profile_file('default.prof')
-        self.monitor_table = self.load_monitor_window('default.mon')
+    def get_motor_calibration_table(self, filename_table):
+        mot_gain_list = []
+        motor_gain_str = filename_table[3][1]
+        motor_gain_str = motor_gain_str[1:-1]
+        mot_gain_str_list = list(motor_gain_str.split(','))
+        for cell in mot_gain_str_list:
+            mot_gain_list.append(float(cell))
+        return mot_gain_list
 
     def load_monitor_window(self, load_filename):
         with open(load_filename, 'r') as filee:
@@ -708,9 +765,12 @@ class Profiler:
             print("I/O error")
 
 
+# ---- this main function is just for testing purposes -------------
 if __name__ == '__main__':
+    q_data = queue.Queue()
+    lock = threading.Lock()
     root = tk.Tk()
     # root.geometry("1350x750+500+300")
-    app = Prof_window(root)
+    app = Prof_window(root, q_data, lock)
     app.window_name('Profile window')
     root.mainloop()

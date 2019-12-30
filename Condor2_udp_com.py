@@ -4,11 +4,12 @@ import ast
 import queue
 import Condor2_profile as ffprof
 import Shaker_comport as ffcom
+import math
 
 UDP_IP = "127.0.0.1"
 UDP_SOCK_TIMEOUT = 0.2
 UDP_PORT = 55278
-UDP_DATA_LOOPS = 10
+UDP_DATA_LOOPS = 5
 # main window loop timeout in ms
 TIMEOUT = 250
 
@@ -34,7 +35,13 @@ class CondorUDP:
         self.ff_com_open = False
         self.com_pause = True
         self.udp_time_old = 0.0
-
+        self.motor_calibration_table = []
+        for row in range(8):
+            self.motor_calibration_table.append(1.0)
+        # ---- call motor calibration function here => add this table as a part of default.ini file
+        self.filename_table = self.profile.read_init_file('default.ini')
+        if len(self.filename_table) > 3:
+            self.motor_calibration_table = self.profile.get_motor_calibration_table(self.filename_table)
     # ----- __init__(self) ends here ---------------------
 
     def check_udp(self):
@@ -294,8 +301,19 @@ class CondorUDP:
             yawrate_right = -yawrate
         flutter = datadict_filtered['airspeed']['actual']
         #  -- wheelshake and turbulence functions are not defined yet
+        # ------- wheelshake:
+        #  ---- wheelheight < 0.0
+        # -------- vxy = sqrt(vx^2 + vy^2)
+        # -------- wheelshake = vxy * surfaceroughness
+        wheelheight = datadict_filtered['wheelheight']['actual']
+        vx = datadict_filtered['vx']['actual']
+        vy = datadict_filtered['vy']['actual']
+        surf_rough = datadict_filtered['surfaceroughness']['actual']
+        vxy = math.sqrt(vx*vx + vy*vy)
         wheelshake = 0.0
-        turbulence = 0.0
+        if wheelheight < 0.0:
+            wheelshake = vxy * surf_rough
+        turbulence = datadict_filtered['turbulencestrength']['actual']
         datadict_filtered['rollrate_right']['actual'] = rollrate_right
         datadict_filtered['rollrate_left']['actual'] = rollrate_left
         datadict_filtered['pitchrate_up']['actual'] = pitchrate_up
@@ -341,12 +359,15 @@ class CondorUDP:
         no_rows = len(self.profile_table)
         m_act = []
         m_act.append('M_act')
+
         motors_table = []
-        motor_max_table = []
-        for cell in range(8):
-            motor_max_table.append(0)
-        for cell in range((8*no_rows+1)):
-            motors_table.append(0)
+        for row in range(no_rows+1):
+            motors_table.append([0, 0, 0 , 0, 0, 0, 0, 0])
+        motor_max_table = [0, 0, 0, 0, 0, 0, 0, 0]
+        # for cell in range(8):
+        #     motor_max_table.append(0)
+        # for cell in range((8*no_rows+1)):
+        #     motors_table.append(0)
         for row in range(1, no_rows):
             data_temp = 0
             # --  get actual motor command from the data_dict
@@ -362,14 +383,28 @@ class CondorUDP:
                     str_temp = str(col)
                     data_index = motors_str.find(str_temp)
                     if data_index >= 0:
-                        motors_table[row*8+col] = int(m_act[row])
-                        # update individual motor max command list
-                        if motor_max_table[col] <= motors_table[row*8+col]:
-                            motor_max_table[col] = motors_table[row*8+col]
+                        # add motor related gains here !!
+                        motor_gain = 1
+                        motors_table[row][col] = int(float(m_act[row]) * self.motor_calibration_table[col]*motor_gain)
+                        if motors_table[row][col] > 100:
+                            motors_table[row][col] = 100
+
+                        # if motor_max_table[col] <= motors_table[row][col]:
+                        #     motor_max_table[col] = motors_table[row][col]
         # -- create motor command control string based on motor_max_table
+
+        # update individual motor max command list
+        for col in range(8):
+            mot_max = 0
+            for row in range(1, no_rows):
+                if motors_table[row][col] >= mot_max:
+                    mot_max = motors_table[row][col]
+                    if mot_max > 100:
+                        mot_max = 100
+                motor_max_table[col] = mot_max
         str_temp = ''
-        for cell in range(8):
-            str_temp = str_temp + 'M' + str(cell) + str(motor_max_table[cell]) + '\r'
+        for col in range(8):
+            str_temp = str_temp + 'M' + str(col) + str(motor_max_table[col]) + '\r'
         return str_temp
 
 # ---------- CondorUDP class function definitions ends here ---------------------------------------------------

@@ -268,12 +268,16 @@ class Window(tk.Frame):
             flt_max_limit = float(profile_table[row][3])
             mot_min_limit = int(profile_table[row][4])
             mot_max_limit = int(profile_table[row][5])
+            motor_str = profile_table[row][6]
             str_temp = profile_table[row][0]
             self.udp_data_dict[profile_table[row][0]]['filtercoeff'] = filtercoeff
             self.udp_data_dict[profile_table[row][0]]['flt_min_limit'] = flt_min_limit
             self.udp_data_dict[profile_table[row][0]]['flt_max_limit'] = flt_max_limit
             self.udp_data_dict[profile_table[row][0]]['mot_min_limit'] = mot_min_limit
             self.udp_data_dict[profile_table[row][0]]['mot_max_limit'] = mot_max_limit
+            self.udp_data_dict[profile_table[row][0]]['Motors'] = motor_str
+
+
 
     def window_name(self, window_name):
         self.master.title(window_name)
@@ -285,7 +289,7 @@ class Window(tk.Frame):
         # Create child window by using the Toplevel function
         self.ff_test_activated = True
         subroot = tk.Toplevel(self)
-        subroot.geometry("900x150")
+        subroot.geometry("900x200")
         subapp = ff_test.FF_window(subroot, self.ser)
         subapp.window_name('ForceFeel communication tests window')
         subapp.var_1.set("--")
