@@ -1,10 +1,11 @@
-
 import socket
 import ast
 import queue
 import Condor2_profile as ffprof
 import Shaker_comport as ffcom
 import math
+import time
+import random
 
 UDP_IP = "127.0.0.1"
 UDP_SOCK_TIMEOUT = 0.2
@@ -14,13 +15,10 @@ UDP_DATA_LOOPS = 5
 TIMEOUT = 250
 
 FILTER_COEF = 1
-FLT_MIN = 0.1
-FLT_MAX = 0.2
+ACT_MIN = 0.1
+ACT_MAX = 0.2
 MOT_MIN = 0
 MOT_MAX = 0
-
-# NO_ROWS_MAX = 34
-# NO_NEW_FUNCTIONS = 13
 
 
 class CondorUDP:
@@ -42,6 +40,7 @@ class CondorUDP:
         self.filename_table = self.profile.read_init_file('default.ini')
         if len(self.filename_table) > 3:
             self.motor_calibration_table = self.profile.get_motor_calibration_table(self.filename_table)
+
     # ----- __init__(self) ends here ---------------------
 
     def check_udp(self):
@@ -84,51 +83,55 @@ class CondorUDP:
             str_temp = strdata[new_start:(val_beg + 1)]
             str_temp = str_temp[:-1]
             # --- create data dictionary
-            data_dict[str_temp] = {'actual': float_value, 'flt_min': 0.0, 'flt_max': 0.0,
-                                   'filtercoeff': FILTER_COEF, 'flt_min_limit': 0.0,
-                                   'flt_max_limit': 0.0, 'mot_min_limit': 0,
-                                   'mot_max_limit': 0, 'M_act': 0, 'Motors': ''}
+            data_dict[str_temp] = {'actual': float_value, 'act_min': 0.0, 'act_max': 0.0,
+                                   'filtercoeff': FILTER_COEF, 'act_min_limit': 0.0,
+                                   'act_max_limit': 0.0, 'mot_min_limit': 0,
+                                   'mot_max_limit': 0, 'M_act': 0, 'motors': ''}
             if count == 0:
                 if str_temp == 'time':
                     data_dict[str_temp]['filtercoeff'] = 1
             count = count + 1
-            # create new function rollrate_left, rollrate_right, pitch_up and pitch_down, Flutter and Turbulence
-            data_dict['rollrate_left'] = {'actual': 0.0, 'flt_min': 0.0, 'flt_max': 0.0,
-                                              'filtercoeff': FILTER_COEF, 'flt_min_limit': FLT_MIN,
-                                              'flt_max_limit': FLT_MAX, 'mot_min_limit': MOT_MIN,
-                                              'mot_max_limit': MOT_MAX, 'M_act': 0, 'Motors': ''}
-            data_dict['rollrate_right'] = {'actual': 0.0, 'flt_min': 0.0, 'flt_max': 0.0,
-                                              'filtercoeff': FILTER_COEF, 'flt_min_limit': FLT_MIN,
-                                              'flt_max_limit': FLT_MAX, 'mot_min_limit': MOT_MIN,
-                                              'mot_max_limit': MOT_MAX, 'M_act': 0, 'Motors': ''}
-            data_dict['pitchrate_up'] = {'actual': 0.0, 'flt_min': 0.0, 'flt_max': 0.0,
-                                              'filtercoeff': FILTER_COEF, 'flt_min_limit': FLT_MIN,
-                                              'flt_max_limit': FLT_MAX, 'mot_min_limit': MOT_MIN,
-                                              'mot_max_limit': MOT_MAX, 'M_act': 0, 'Motors': ''}
-            data_dict['pitchrate_down'] = {'actual': 0.0, 'flt_min': 0.0, 'flt_max': 0.0,
-                                              'filtercoeff': FILTER_COEF, 'flt_min_limit': FLT_MIN,
-                                              'flt_max_limit': FLT_MAX, 'mot_min_limit': MOT_MIN,
-                                              'mot_max_limit': MOT_MAX, 'M_act': 0, 'Motors': ''}
-            data_dict['yawrate_left'] = {'actual': 0.0, 'flt_min': 0.0, 'flt_max': 0.0,
-                                           'filtercoeff': FILTER_COEF, 'flt_min_limit': FLT_MIN,
-                                           'flt_max_limit': FLT_MAX, 'mot_min_limit': MOT_MIN,
-                                           'mot_max_limit': MOT_MAX, 'M_act': 0, 'Motors': ''}
-            data_dict['yawrate_right'] = {'actual': 0.0, 'flt_min': 0.0, 'flt_max': 0.0,
-                                         'filtercoeff': FILTER_COEF, 'flt_min_limit': FLT_MIN,
-                                         'flt_max_limit': FLT_MAX, 'mot_min_limit': MOT_MIN,
-                                         'mot_max_limit': MOT_MAX, 'M_act': 0, 'Motors': ''}
-            data_dict['Flutter'] = {'actual': 0.0, 'flt_min': 0.0, 'flt_max': 0.0,
-                                          'filtercoeff': FILTER_COEF, 'flt_min_limit': FLT_MIN,
-                                          'flt_max_limit': FLT_MAX, 'mot_min_limit': MOT_MIN,
-                                          'mot_max_limit': MOT_MAX, 'M_act': 0, 'Motors': ''}
-            data_dict['Wheelshake'] = {'actual': 0.0, 'flt_min': 0.0, 'flt_max': 0.0,
-                                          'filtercoeff': FILTER_COEF, 'flt_min_limit': FLT_MIN,
-                                          'flt_max_limit': FLT_MAX, 'mot_min_limit': MOT_MIN,
-                                          'mot_max_limit': MOT_MAX, 'M_act': 0, 'Motors': ''}
-            data_dict['Turbulence'] = {'actual': 0.0, 'flt_min': 0.0, 'flt_max': 0.0,
-                                       'filtercoeff': FILTER_COEF, 'flt_min_limit': FLT_MIN,
-                                       'flt_max_limit': FLT_MAX, 'mot_min_limit': MOT_MIN,
-                                       'mot_max_limit': MOT_MAX, 'M_act': 0, 'Motors': ''}
+            # create new function rollrate_left, rollrate_right, pitch_up and pitch_down, Flutter and Turbulence2
+            data_dict['rollrate_left'] = {'actual': 0.0, 'act_min': 0.0, 'act_max': 0.0,
+                                          'filtercoeff': FILTER_COEF, 'act_min_limit': ACT_MIN,
+                                          'act_max_limit': ACT_MAX, 'mot_min_limit': MOT_MIN,
+                                          'mot_max_limit': MOT_MAX, 'M_act': 0, 'motors': ''}
+            data_dict['rollrate_right'] = {'actual': 0.0, 'act_min': 0.0, 'act_max': 0.0,
+                                           'filtercoeff': FILTER_COEF, 'act_min_limit': ACT_MIN,
+                                           'act_max_limit': ACT_MAX, 'mot_min_limit': MOT_MIN,
+                                           'mot_max_limit': MOT_MAX, 'M_act': 0, 'motors': ''}
+            data_dict['pitchrate_up'] = {'actual': 0.0, 'act_min': 0.0, 'act_max': 0.0,
+                                         'filtercoeff': FILTER_COEF, 'act_min_limit': ACT_MIN,
+                                         'act_max_limit': ACT_MAX, 'mot_min_limit': MOT_MIN,
+                                         'mot_max_limit': MOT_MAX, 'M_act': 0, 'motors': ''}
+            data_dict['pitchrate_down'] = {'actual': 0.0, 'act_min': 0.0, 'act_max': 0.0,
+                                           'filtercoeff': FILTER_COEF, 'act_min_limit': ACT_MIN,
+                                           'act_max_limit': ACT_MAX, 'mot_min_limit': MOT_MIN,
+                                           'mot_max_limit': MOT_MAX, 'M_act': 0, 'motors': ''}
+            data_dict['yawrate_left'] = {'actual': 0.0, 'act_min': 0.0, 'act_max': 0.0,
+                                         'filtercoeff': FILTER_COEF, 'act_min_limit': ACT_MIN,
+                                         'act_max_limit': ACT_MAX, 'mot_min_limit': MOT_MIN,
+                                         'mot_max_limit': MOT_MAX, 'M_act': 0, 'motors': ''}
+            data_dict['yawrate_right'] = {'actual': 0.0, 'act_min': 0.0, 'act_max': 0.0,
+                                          'filtercoeff': FILTER_COEF, 'act_min_limit': ACT_MIN,
+                                          'act_max_limit': ACT_MAX, 'mot_min_limit': MOT_MIN,
+                                          'mot_max_limit': MOT_MAX, 'M_act': 0, 'motors': ''}
+            data_dict['Flutter'] = {'actual': 0.0, 'act_min': 0.0, 'act_max': 0.0,
+                                    'filtercoeff': FILTER_COEF, 'act_min_limit': ACT_MIN,
+                                    'act_max_limit': ACT_MAX, 'mot_min_limit': MOT_MIN,
+                                    'mot_max_limit': MOT_MAX, 'M_act': 0, 'motors': ''}
+            data_dict['Wheelshake'] = {'actual': 0.0, 'act_min': 0.0, 'act_max': 0.0,
+                                       'filtercoeff': FILTER_COEF, 'act_min_limit': ACT_MIN,
+                                       'act_max_limit': ACT_MAX, 'mot_min_limit': MOT_MIN,
+                                       'mot_max_limit': MOT_MAX, 'M_act': 0, 'motors': ''}
+            data_dict['Turbulence'] = {'actual': 0.0, 'act_min': 0.0, 'act_max': 0.0,
+                                       'filtercoeff': FILTER_COEF, 'act_min_limit': ACT_MIN,
+                                       'act_max_limit': ACT_MAX, 'mot_min_limit': MOT_MIN,
+                                       'mot_max_limit': MOT_MAX, 'M_act': 0, 'motors': ''}
+            data_dict['Turbulence2'] = {'actual': 0.0, 'act_min': 0.0, 'act_max': 0.0,
+                                        'filtercoeff': FILTER_COEF, 'act_min_limit': ACT_MIN,
+                                        'act_max_limit': ACT_MAX, 'mot_min_limit': MOT_MIN,
+                                        'mot_max_limit': MOT_MAX, 'M_act': 0, 'motors': ''}
         return data_dict
 
     def parser_condor_telemetry(self, strdata, data_dict):
@@ -152,11 +155,11 @@ class CondorUDP:
         no_lines = len(data_dict_parsered)
         data_names = list(data_dict_parsered.keys())
         for row in range(1, no_lines):
-            data_old = data_dict_old.get(data_names[row])['actual']
-            data_parsered = data_dict_parsered.get(data_names[row])['actual']
-            filter_coeff = data_dict_parsered.get(data_names[row])['filtercoeff']
+            data_old = float(data_dict_old.get(data_names[row])['actual'])
+            data_parsered = float(data_dict_parsered.get(data_names[row])['actual'])
+            filter_coeff = float(data_dict_parsered.get(data_names[row])['filtercoeff'])
             data_filtered = (1 - 1 / filter_coeff) * data_old + (1 / filter_coeff) * data_parsered
-            data_dict_new[data_names[row]]['actual'] = data_filtered
+            data_dict_new[data_names[row]]['actual'] = str(data_filtered)
         return data_dict_new
 
     def get_udp_data(self):
@@ -194,10 +197,19 @@ class CondorUDP:
             self.udp_com = False
         return strdata_udp
 
-    def udp_and_motor(self, q_data, q_udp_status, q_startpause, lock, ser, portname, baudrate):
+    def udp_and_motor(self, q_data, q_udp_status, q_startpause, lock, ser, portname, baudrate, q_motor_tables):
         data_dict = {}
         self.udp_binded = False
         startpause = False
+        table_created = False
+        start_time_table = []
+        name_row = ['rand_start', 'rand_counter', 'rand_period', 'rand_ratio']
+        for mot in range(8):
+            name_row.append('rand_M' + str(mot))
+        rand_start_table = [name_row]
+        param_list_str = ''
+        motors_table = []
+        start_time = time.time()
         lock.acquire()
         #  Task 0: function init:  get and check q_param queue status
         if not q_startpause.empty():
@@ -205,6 +217,11 @@ class CondorUDP:
         # # open q_data queue and get data_dict dictionary from there
         if not q_data.empty():
             data_dict = q_data.get()
+            for row in range(len(data_dict)):
+                if not table_created:
+                    start_time_table.append(start_time)
+                    rand_start_table.append([0.0, 0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+            table_created = True
         lock.release()
         # --------- start actual function loop -----------------------------
         # check udp communication
@@ -212,14 +229,16 @@ class CondorUDP:
         lock.acquire()
         if not ser.isopen:
             ser.Open(portname, baudrate)
-            ser.Send('M00\rM10\rM20\rM30\rM40\rM50\rM60\rM70\r')
             self.ff_com_open = True
+        ser.Send('M00\rM10\rM20\rM30\rM40\rM50\rM60\rM70\r')
         lock.release()
         datadict_old = data_dict
         strdata_old = ''
+        check = ser.isopen
         while startpause:
             # ------------ get_udp_data(UDP_check) ---------------------------
             # start looping UDP and sound creating tasks
+            datadict_final = {}
             for i in range(UDP_DATA_LOOPS):
                 # -------------get_udp_data end, return strdata--------------------
                 strdata = self.get_udp_data()
@@ -233,11 +252,12 @@ class CondorUDP:
                 datadict_final = self.update_new_functions(datadict_filtered)
                 datadict_old = datadict_final
                 # ------ function3: data to motor control  conversion
-                datadict_final = self.data_to_motor(datadict_final)
-                # ----- optional control functions and filtering comes here -------
+                datadict_final = self.data_to_motor_ph1(datadict_final)
+                motors_table, start_time_table, rand_start_table = \
+                    self.data_to_motor_ph2(datadict_final, start_time_table, rand_start_table)
                 # ------ function4:  ForceFeel motor control, create motor control command string
                 # ------ as output (=motor_control_str)
-                motor_control_str = self.create_ff_string(datadict_final)
+                motor_control_str = self.create_ff_string(motors_table)
                 # ------ Send motor control string to ForceFeel comport and stop all motors if
                 # ------ UDP communication or monitoring are paused. Prevent other functions to use
                 # ------ Send function at the same time using lock.acquire() and lock.releese() functions
@@ -249,11 +269,20 @@ class CondorUDP:
                 lock.release()
                 #  Loop function1-4:  x times
             # ---------- function5:   update q_data => main function will use this queue
+            no_rows = len(self.profile_table)
+            param_list_str = ''
+            for row in range(no_rows):
+                param_list_str = param_list_str + self.profile_table[row][0] + ','
+            param_list_str = param_list_str[:-1]
             lock.acquire()
             # clear q_data queue
             while not q_data.empty():
                 x = q_data.get()
             q_data.put(datadict_final)
+            while not q_motor_tables.empty():
+                x = q_motor_tables.get()
+            q_motor_tables.put(param_list_str)
+            q_motor_tables.put(motors_table)
             # check q_startpause status
             if not q_startpause.empty():
                 startpause = q_startpause.get()
@@ -281,119 +310,227 @@ class CondorUDP:
         yawrate_left = 0.0
         yawrate_right = 0.0
         flutter = 0.0
-        wheelshake= 0.0
+        wheelshake = 0.0
         turbulence = 0.0
+        turbulence2 = 0.0
         # search rollrate from datadict
-        rollrate = datadict_filtered['rollrate']['actual']
+        rollrate = float(datadict_filtered['rollrate']['actual'])
         if rollrate >= 0:
             rollrate_right = rollrate
         elif rollrate < 0:
             rollrate_left = -rollrate
-        pitchrate = datadict_filtered['pitchrate']['actual']
+        pitchrate = float(datadict_filtered['pitchrate']['actual'])
         if pitchrate >= 0:
             pitchrate_up = pitchrate
         elif pitchrate < 0:
             pitchrate_down = -pitchrate
-        yawrate = datadict_filtered['yawrate']['actual']
+        yawrate = float(datadict_filtered['yawrate']['actual'])
         if yawrate >= 0.0:
             yawrate_left = yawrate
         elif yawrate < 0.0:
             yawrate_right = -yawrate
-        flutter = datadict_filtered['airspeed']['actual']
-        #  -- wheelshake and turbulence functions are not defined yet
-        # ------- wheelshake:
-        #  ---- wheelheight < 0.0
-        # -------- vxy = sqrt(vx^2 + vy^2)
-        # -------- wheelshake = vxy * surfaceroughness
-        wheelheight = datadict_filtered['wheelheight']['actual']
-        vx = datadict_filtered['vx']['actual']
-        vy = datadict_filtered['vy']['actual']
-        surf_rough = datadict_filtered['surfaceroughness']['actual']
-        vxy = math.sqrt(vx*vx + vy*vy)
-        wheelshake = 0.0
+        flutter = float(datadict_filtered['airspeed']['actual'])
+        wheelheight = float(datadict_filtered['wheelheight']['actual'])
+        vx = float(datadict_filtered['vx']['actual'])
+        vy = float(datadict_filtered['vy']['actual'])
+        surf_rough = float(datadict_filtered['surfaceroughness']['actual'])
+        vxy = math.sqrt(vx * vx + vy * vy)
         if wheelheight < 0.0:
             wheelshake = vxy * surf_rough
-        turbulence = datadict_filtered['turbulencestrength']['actual']
-        datadict_filtered['rollrate_right']['actual'] = rollrate_right
-        datadict_filtered['rollrate_left']['actual'] = rollrate_left
-        datadict_filtered['pitchrate_up']['actual'] = pitchrate_up
-        datadict_filtered['pitchrate_down']['actual'] = pitchrate_down
-        datadict_filtered['yawrate_left']['actual'] = yawrate_left
-        datadict_filtered['yawrate_right']['actual'] = yawrate_right
-        datadict_filtered['Flutter']['actual'] = flutter
-        datadict_filtered['Wheelshake']['actual'] = wheelshake
-        datadict_filtered['Turbulence']['actual'] = turbulence
+        az = math.fabs(float(datadict_filtered['az']['actual']))
+        turbulence = 0.0
+        if wheelheight > 0.2:
+            turbulence = float(datadict_filtered['turbulencestrength']['actual'])
+        turbulence2 = turbulence * az
+        datadict_filtered['rollrate_right']['actual'] = str(rollrate_right)
+        datadict_filtered['rollrate_left']['actual'] = str(rollrate_left)
+        datadict_filtered['pitchrate_up']['actual'] = str(pitchrate_up)
+        datadict_filtered['pitchrate_down']['actual'] = str(pitchrate_down)
+        datadict_filtered['yawrate_left']['actual'] = str(yawrate_left)
+        datadict_filtered['yawrate_right']['actual'] = str(yawrate_right)
+        datadict_filtered['Flutter']['actual'] = str(flutter)
+        datadict_filtered['Wheelshake']['actual'] = str(wheelshake)
+        datadict_filtered['Turbulence']['actual'] = str(turbulence)
+        datadict_filtered['Turbulence2']['actual'] = str(turbulence2)
 
         return datadict_filtered
 
-    def data_to_motor(self, datadict_final):
+    def data_to_motor_ph1(self, datadict):
         new_time = 1.0
         # # get UDP parameter list => function call Condor_UDP_data_arrays() that returns dictionary
-        no_lines = len(datadict_final)
-        # motor_speed_list = []
-        data_names = list(datadict_final.keys())
+        no_lines = len(datadict)
+        data_names = list(datadict.keys())
         for row in range(no_lines):
-            flt_min_limit = datadict_final.get(data_names[row])['flt_min_limit']
-            flt_max_limit = datadict_final.get(data_names[row])['flt_max_limit']
-            mot_min_limit = datadict_final.get(data_names[row])['mot_min_limit']
-            mot_max_limit = datadict_final.get(data_names[row])['mot_max_limit']
-            actual = datadict_final.get(data_names[row])['actual']
+            act_min_limit = float(datadict.get(data_names[row])['act_min_limit'])
+            act_max_limit = float(datadict.get(data_names[row])['act_max_limit'])
+            mot_min_limit = float(datadict.get(data_names[row])['mot_min_limit'])
+            mot_max_limit = float(datadict.get(data_names[row])['mot_max_limit'])
+            actual = float(datadict.get(data_names[row])['actual'])
             # ---- start conversion from actual signals to motor commands
             mot_maxmin_delta = mot_max_limit - mot_min_limit
-            flt_maxmin_delta = flt_max_limit - flt_min_limit
-            actual_delta = actual - flt_min_limit
-            if not flt_maxmin_delta <= 0:
-                mot_kk1 = mot_maxmin_delta/flt_maxmin_delta
+            act_maxmin_delta = act_max_limit - act_min_limit
+            actual_delta = actual - act_min_limit
+            if not act_maxmin_delta <= 0:
+                mot_kk1 = mot_maxmin_delta / act_maxmin_delta
                 motor_speed = int(mot_min_limit + mot_kk1 * actual_delta)
             else:
                 motor_speed = 0
-            if actual < flt_min_limit:
+            if actual < act_min_limit:
                 motor_speed = 0
-            if actual > flt_max_limit:
+            if actual > act_max_limit:
                 motor_speed = mot_max_limit
-            datadict_final[data_names[row]]['M_act'] = motor_speed
+            datadict[data_names[row]]['M_act'] = str(motor_speed)
         self.udp_time_old = new_time
-        return datadict_final
+        return datadict
 
-    def create_ff_string(self, data_dict):
+    def data_to_motor_ph2(self, datadict, start_time_table, rand_start_table, test_parameter=None):
         no_rows = len(self.profile_table)
-        m_act = []
-        m_act.append('M_act')
-
+        m_act = ['M_act']
         motors_table = []
-        for row in range(no_rows+1):
-            motors_table.append([0, 0, 0 , 0, 0, 0, 0, 0])
+        for row in range(no_rows + 1):
+            motors_table.append([0, 0, 0, 0, 0, 0, 0, 0])
         motor_max_table = [0, 0, 0, 0, 0, 0, 0, 0]
-        # for cell in range(8):
-        #     motor_max_table.append(0)
-        # for cell in range((8*no_rows+1)):
-        #     motors_table.append(0)
+        if test_parameter is None:
+            motors_table, start_time_table, rand_start_table = self.create_modulator(datadict, motors_table,
+                                                                                     start_time_table,
+                                                                                     rand_start_table)
+        if not test_parameter is None:
+            motors_table, start_time_table, rand_start_table = self.create_modulator(datadict, motors_table,
+                                                                                     start_time_table,
+                                                                                     rand_start_table, test_parameter)
+
+        #  --- add motor control gains to motor_table
         for row in range(1, no_rows):
-            data_temp = 0
+            motor_gain = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
             # --  get actual motor command from the data_dict
-            data_str = data_dict[self.profile_table[row][0]]['M_act']
-            if not data_str == '-':
-                data_temp = int(data_str)
-            m_act.append(data_temp)
+            sub_dict = datadict[self.profile_table[row][0]]
+
+            status = sub_dict.get('gain_M0', '0.0')
+            if not status == '0.0':
+                for mot in range(8):
+                    motor_gain[mot] = float(datadict[self.profile_table[row][0]][('gain_M' + str(mot))])
+            for mot in range(8):
+                motors_table[row][mot] = int(motors_table[row][mot] * self.motor_calibration_table[mot] *
+                                             motor_gain[mot])
+                if motors_table[row][mot] > 100:
+                    motors_table[row][mot] = 100
+
+        return motors_table, start_time_table, rand_start_table
+
+    def create_modulator(self, datadict, motors_table, start_time_table, rand_start_table, test_parameter=None):
+        no_rows = len(self.profile_table)
+        if not test_parameter is None:
+            no_rows = 2
+        # trigger = False
+        actual_time = 0.0
+        period, ratio, ampl = 0.0, 0.0, 0.0
+        offset1, offset2, rand_ampl = 0.0, 0.0, 0.0
+        motor_mod_gain = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+        m_act, mot_min_limit, mot_max_limit = 0.0, 0.0, 0.0
+        real_time = time.time()
+        # test!!
+
+        for row in range(1, no_rows):
+            sub_dict = datadict[self.profile_table[row][0]]
+            if not test_parameter is None:
+                sub_dict = datadict[test_parameter]
+            # name = self.profile_table[row][0]
+            rand_range = 0
+            rand_gain = 0.0
+            m_act_diff = 0.0
+            m_act = float(sub_dict['M_act'])
+            mot_min_limit, mot_max_limit = float(sub_dict['mot_min_limit']), float(sub_dict['mot_max_limit'])
+            mot_maxmin = mot_max_limit - mot_min_limit
+            if m_act > mot_max_limit:
+                m_act = mot_max_limit
+            m_act_diff = m_act - mot_min_limit
+            temp_mod_gain = 1.0
+            status = sub_dict.get('mod_enabled', 9)
+            if not status == 9:
+                if int(sub_dict['mod_enabled']) == 1:
+                    period, ratio = float(sub_dict['period']), float(sub_dict['ratio'])
+                    ampl, offset1 = float(sub_dict['ampl']), float(sub_dict['offset1'])
+                    offset2, rand_ampl = float(sub_dict['offset2']), float(sub_dict['rand_ampl'])
+                    t_rand_start = float(rand_start_table[row + 1][rand_start_table[0].index('rand_start')])
+                    rand_counter = int(rand_start_table[row + 1][rand_start_table[0].index('rand_counter')])
+                    rand_period = float(rand_start_table[row + 1][rand_start_table[0].index('rand_period')])
+                    rand_ratio = float(rand_start_table[row + 1][rand_start_table[0].index('rand_ratio')])
+                    r_period = period * rand_period
+                    r_ratio = ratio * rand_ratio
+                    # start creation
+                    if m_act_diff > 0.0:
+                        actual_time = float(real_time - start_time_table[row])
+                        if actual_time > r_period:
+                            start_time_table[row] = float(real_time)
+                            actual_time = float(real_time) - start_time_table[row]
+                            if rand_counter < 0:
+                                # generate random start time moment => Check table
+                                trigger = True
+                                if 'rand_start_enabled' in sub_dict:
+                                    if sub_dict['rand_start_enabled'] == 1:
+                                        rand_counter = random.randint(1, 2)
+                                        rand_period = float((random.randint(88, 120) / 100))
+                                        r_period = period * rand_period
+                                        rand_start_table[row + 1][rand_start_table[0].index('rand_period')] = \
+                                            rand_period
+                                        rand_ratio = float(random.randint(70, 100) / 100)
+                                        r_ratio = ratio * rand_ratio
+                                        rand_start_table[row + 1][rand_start_table[0].index('rand_ratio')] = \
+                                            rand_ratio
+                                        t_rand_start = (1 - r_ratio) * r_period
+                                        rand_start_table[row + 1][rand_start_table[0].index('rand_start')] = \
+                                            t_rand_start
+                                if rand_ampl > 0.0:
+                                    rand_range = int(rand_ampl * mot_maxmin)
+                                    rand_gain = random.randint(0, rand_range) / mot_maxmin
+                                else:
+                                    rand_gain = 0.0
+                                    rand_ampl = 0.0
+                                rand_m0_index = rand_start_table[0].index('rand_M0')
+                                for mot in range(8):
+                                    if int(sub_dict['rand_separately']) == 1:
+                                        rand_gain = random.randint(0, rand_range) / mot_maxmin
+                                    rand_start_table[row + 1][rand_m0_index + mot] = rand_gain
+
+                            rand_counter = rand_counter - 1
+                            rand_start_table[row + 1][rand_start_table[0].index('rand_counter')] = rand_counter
+
+                        t_ratio = r_ratio * r_period
+                        if actual_time <= t_rand_start:
+                            temp_mod_gain = offset2
+                        if t_rand_start < actual_time < (t_ratio + t_rand_start):
+                            # ---- math function offset1 + ampl*sin(pi/t_ratio*actual_time) -----
+                            temp_mod_gain = offset1 + ampl * math.sin((math.pi / t_ratio) * actual_time)
+                        if (t_ratio + t_rand_start) <= actual_time < r_period:
+                            temp_mod_gain = offset2
+                        rand_m0_index = rand_start_table[0].index('rand_M0')
+                        for mot in range(8):
+                            motor_mod_gain[mot] = temp_mod_gain * (1 - rand_start_table[row + 1][rand_m0_index + mot])
+            if m_act_diff <= 0.0:
+                m_act_diff = 0.0
+
             # -- split motor speed M_act to individual motors
-            motors_str = self.profile_table[row][6]
-            no_motors = int(len(motors_str)/2)
+            motors_str = sub_dict['motors']
+            no_motors = int(len(motors_str) / 2)
             if no_motors > 0:
-                for col in range(8):
-                    str_temp = str(col)
+                for mot in range(8):
+                    str_temp = str(mot)
                     data_index = motors_str.find(str_temp)
                     if data_index >= 0:
-                        # add motor related gains here !!
-                        motor_gain = 1
-                        motors_table[row][col] = int(float(m_act[row]) * self.motor_calibration_table[col]*motor_gain)
-                        if motors_table[row][col] > 100:
-                            motors_table[row][col] = 100
+                        if m_act_diff > 0.0:
+                            motors_table[row][mot] = int(mot_min_limit + m_act_diff * motor_mod_gain[mot])
+                            if motors_table[row][mot] >= 100:
+                                motors_table[row][mot] = int(100)
+                        elif m_act_diff <= 0.0:
+                            motors_table[row][mot] = 0
 
-                        # if motor_max_table[col] <= motors_table[row][col]:
-                        #     motor_max_table[col] = motors_table[row][col]
-        # -- create motor command control string based on motor_max_table
+        return motors_table, start_time_table, rand_start_table
 
-        # update individual motor max command list
+    def create_ff_string(self, motors_table):
+
+        # # update individual motor max command list
+        no_rows = len(self.profile_table)
+        motor_max_table = [0, 0, 0, 0, 0, 0, 0, 0]
         for col in range(8):
             mot_max = 0
             for row in range(1, no_rows):
@@ -402,9 +539,9 @@ class CondorUDP:
                     if mot_max > 100:
                         mot_max = 100
                 motor_max_table[col] = mot_max
-        str_temp = ''
+        str_motor = ''
         for col in range(8):
-            str_temp = str_temp + 'M' + str(col) + str(motor_max_table[col]) + '\r'
-        return str_temp
+            str_motor = str_motor + 'M' + str(col) + str(motor_max_table[col]) + '\r'
+        return str_motor
 
 # ---------- CondorUDP class function definitions ends here ---------------------------------------------------

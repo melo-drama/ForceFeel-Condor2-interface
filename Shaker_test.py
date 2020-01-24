@@ -45,22 +45,11 @@ class FF_window(tk.Frame):
 
         # adds a command to the menu option, calling it exit, and the
         # command it runs on event is client_exit
-        file.add_command(label="Open")
         file.add_command(label="Save setups", command=self.save_setups)
         file.add_command(label="Exit", command=self.client_exit)
 
         # added "file" to our menu
         menu.add_cascade(label="File", menu=file)
-
-        # create the file object)
-        edit = tk.Menu(menu, tearoff=False)
-
-        # adds a command to the menu option, calling it exit, and the
-        # command it runs on event is client_exit
-        edit.add_command(label="Undo")
-
-        # added "Edit" to our menu
-        menu.add_cascade(label="Edit", menu=edit)
 
         # add buttons and labels
         lbl_set_baudrate = tk.Label(master, text='Set baudrate:')
@@ -90,8 +79,6 @@ class FF_window(tk.Frame):
         btn_stop_all_motors.place(relx=0.0, rely=0.72)
 
         # create motor gain entries here
-        # self.entry_frame = tk.Frame()
-        # self.entry_frame.place(relx=0.0, rely=0.0)
         self.motor_calib_list = []
         self.motor_gain_entry = []
         self.motor_entry_var = []
@@ -214,6 +201,7 @@ class FF_window(tk.Frame):
         p, com_port_founded = ffcom.get_COM_port(x)
         self.var_1.set(p)
 
+
     def load_ff_port_info(self):
         data = ffcom.load_ff_port_data()
         port_name, baudrate, comport = data
@@ -223,8 +211,9 @@ class FF_window(tk.Frame):
 
     def save_ff_port_info(self):
         index = self.cb_COM_ports.current()
+        x = self.com_ports[index]
+        comport, com_port_founded = ffcom.get_COM_port(x)
         baudrate = self.entry_baudrate.get()
-        comport = self.var_1.get()
         ffcom.save_ff_port_data(self.com_port_name[index], baudrate, comport)
 
     def run_m(self, v):

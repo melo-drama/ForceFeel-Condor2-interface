@@ -1,9 +1,8 @@
-# ForceFeel-Condor2-interface
-
 # Lot's of changes and improvements done - (text updated 24.01.2020)
 - copy all *.exe,*ini, *.mon, *.prof files under same subfolder
 - Read the instruction file condor2_shaker_v3_instructions.pdf
 
+# ForceFeel-Condor2-interface -(text updated 27.12.2019)
 Realteus Forcefeel control interface for Condor 2 soaring simulator (might work with Jetseat cushion also)
 This interface is programmed with Python 3.7 version.
 System converts Condor2 UDP telemetry strings into Realteus Forcefeel cushion motor control command strings.

@@ -8,22 +8,26 @@ from tkinter import messagebox
 from tkinter import filedialog
 import queue
 import threading
+import time
+import math
 
 
 class Prof_window(tk.Frame):
-    def __init__(self, master, q_data, lock):
+    def __init__(self, master, q_data, lock, ser):
         tk.Frame.__init__(self, master)
-        # tk.Toplevel.__init__(self, master)
-        # self.frame = tk.Frame(self)
+
         #  ------------------
         self.master = master
-        # self.master.ser = ser
-        # self.init_window()
+        self.ser = ser
+        self.q_data_out = queue.Queue()
+        self.q_data_in = queue.Queue()
+        self.test_lock = threading.Lock()
+
         self.lock = lock
         self.q_data = q_data
-        status =  True
+
         status = self.q_data.empty
-        self. lock.acquire()
+        self.lock.acquire()
         if not status:
             window_refresh_status = self.q_data.get()
         self.lock.release()
@@ -42,6 +46,8 @@ class Prof_window(tk.Frame):
         self.get_monfile_list()
         self.get_proffile_list()
 
+        self.instances_created = False
+        self.test_thread_created = False
         self.motor_calibration_table = []
         for mot in range(8):
             self.motor_calibration_table.append(1.0)
@@ -77,27 +83,23 @@ class Prof_window(tk.Frame):
         file.add_command(label="Open")
         file.add_command(label="Save as Profile", command=self.save_as_prof)
         file.add_command(label="Save as Monitor", command=self.save_as_mon)
-        file.add_command(label="Exit", command=self.client_exit)
+        file.add_command(label="Exit and update main window", command=self.client_exit)
         # added "file" to our menu
         menu.add_cascade(label="File", menu=file)
-        # create the file object)
-        edit = tk.Menu(menu, tearoff=False)
-        # adds a command to the menu option, calling it exit, and the
-        # command it runs on event is client_exit
-        edit.add_command(label="Undo")
-        # added "Edit" to our menu
-        menu.add_cascade(label="Edit", menu=edit)
+
+        bg2 = '#3399ff'
 
         self.mon_frame = tk.Frame(self)
-        self.mon_frame.grid(column=0, row=0, rowspan=8, padx=5, pady=5)
+        self.mon_frame.grid(column=0, row=0, rowspan=8, sticky='NW', padx=5, pady=5)
+        self.mon_frame.config(highlightbackground=bg2, highlightthickness=2)
         self.profile_frame = tk.Frame(self)
-        self.profile_frame.grid(column=2, row=0, padx=5, pady=5, sticky='N')
+        self.profile_frame.grid(column=2, row=0, rowspan=2, padx=5, pady=5, sticky='NW')
+        self.profile_frame.config(highlightbackground=bg2, highlightthickness=2)
 
         # ---- add label to frame -------
-        lbl_select_monwin_file = tk.Label(self.mon_frame, text='Select monitor parameters')
+        lbl_select_monwin_file = tk.Label(self.mon_frame, text='Select monitor file')
         lbl_select_monwin_file.grid(column=0, row=0, columnspan=2, sticky='W')
         # ------ add Combobox to frame -------
-        # monwin_table = ['all_parameters.ini', 'new.mon']
         self.combo_select_monwin = ttk.Combobox(self.mon_frame, values=self.monfile_list, width=25)
         self.combo_select_monwin.grid(column=0, row=1, sticky='W', padx=4, pady=4)
         index = 0
@@ -163,17 +165,20 @@ class Prof_window(tk.Frame):
         lbl_profile_text.grid(column=0, row=4, sticky='W', padx=10)
         # --- add profile parameter label list here
         prof_param_name_list = self.profile_parameter_list[0]
-        no_columns = len(prof_param_name_list)
         no_rows = len(self.profile_parameter_list)
         start_column = 0
         start_row = 5
         width = [25, 10, 10, 10, 10, 10, 17]
+        no_columns = len(width)
+
+        pos_list1 = ['E', 'W', 'W', 'W', 'W', 'W', 'W']
         self.lbl_prof_param_names = []
         self.text_prof_param = []
         for col in range(0, no_columns):
             self.lbl_prof_param_names.append(tk.Label(self.profile_frame, text=prof_param_name_list[col],
                                                       width=width[col]))
-            self.lbl_prof_param_names[col].grid(column=start_column + col, row=start_row, sticky='W', padx=2, pady=2)
+            self.lbl_prof_param_names[col].grid(column=start_column + col, row=start_row, sticky=pos_list1[col],
+                                                padx=2, pady=2)
             self.text_prof_param.append(tk.Text(self.profile_frame, height=no_rows - 1, width=width[col]))
             self.text_prof_param[col].grid(column=col + start_column, row=start_row + 1, sticky='W', padx=2, pady=2)
         for col in range(no_columns):
@@ -197,61 +202,432 @@ class Prof_window(tk.Frame):
 
         # --- create profile edit frame
         self.prof_edit_frame = tk.Frame(self)
-        self.prof_edit_frame.grid(column=2, row=1, sticky='N', padx=5, pady=5)
+        self.prof_edit_frame.grid(column=2, row=2, sticky='N', padx=4, pady=4)
+
+        # --- create param_edit_frame (sub frame from prof edit frame)
+        self.param_edit_frame = tk.Frame(self.prof_edit_frame)
+        self.param_edit_frame.grid(column=0, row=0, sticky='W', padx=0, pady=0)
+        self.param_edit_frame.config(highlightbackground=bg2, highlightthickness=2)
         lbl_edit_prof_names = []
         #  create parameter name labels
         for col in range(no_columns - 1):
-            lbl_edit_prof_names.append(tk.Label(self.prof_edit_frame, text=prof_param_name_list[col],
+            lbl_edit_prof_names.append(tk.Label(self.param_edit_frame, text=prof_param_name_list[col],
                                                 width=width[col]))
             lbl_edit_prof_names[col].grid(column=col, row=0, sticky='W', padx=2, pady=2)
         # create edit list row
         self.profile_parameter = tk.StringVar()
-        self.lbl_profile_parameter = tk.Label(self.prof_edit_frame, textvariable=self.profile_parameter,
+        self.lbl_profile_parameter = tk.Label(self.param_edit_frame, textvariable=self.profile_parameter,
                                               width=width[0])
         self.lbl_profile_parameter.grid(column=0, row=1, sticky='W', padx=2, pady=2)
         # --- create entry cells ---
         width = [25, 15, 15, 15, 15, 15, 8]
+        varlist_init_table = ['1', '0', '0', '10', '20']
+        for col in (len(varlist_init_table),(no_columns-2)):
+            varlist_init_table.append('0')
         self.edit_profile_entries = []
         self.edit_profile_var_list = []
         for col in range(no_columns - 2):
             self.edit_profile_var_list.append(tk.StringVar())
-            self.edit_profile_entries.append(tk.Entry(self.prof_edit_frame,
+            self.edit_profile_entries.append(tk.Entry(self.param_edit_frame,
                                                       textvariable=self.edit_profile_var_list[col],
                                                       width=width[col + 1]))
             self.edit_profile_entries[col].grid(column=col + 1, row=1, sticky='W', padx=2, pady=2)
-        # -- create motor selection checklists
-        lbl_motor = tk.Label(self.prof_edit_frame, text=' Motors', width=width[no_columns - 1])
-        lbl_motor.grid(column=(no_columns - 1), row=0, columnspan=2, sticky='W', padx=2, pady=2)
+            self.edit_profile_var_list[col].set(varlist_init_table[col])
+        # -- create motor selection checklists and motor gain entries
+        lbl_gain1 = tk.Label(self.param_edit_frame, text='gain')
+        lbl_gain1.grid(column=no_columns, row=0, padx=2, pady=2)
+        lbl_motor = tk.Label(self.param_edit_frame, text=' Motors', justify='center')
+        lbl_motor.grid(column=(no_columns+1), row=0, columnspan=2, sticky='N', padx=2, pady=2)
+
+        lbl_gain2 = tk.Label(self.param_edit_frame, text='gain', justify='left', width=4)
+        lbl_gain2.grid(column=(no_columns+3), row=0, sticky='W', padx=2, pady=2)
         self.motor_check_btn_list = []
         self.motor_check_varlist = []
+        self.motor_gain_entr_list = []
+        self.motor_gain_entr_varlist = []
+        col_list = [3, 0, 3, 0, 3, 0, 3, 0]
+        entr_col_list = [3, 0, 3, 0, 3, 0, 3, 0]
+        pos_list = ['W', 'E', 'W', 'E', 'W', 'E', 'W', 'E']
         str_help = ''
         for mot in range(8):
             self.motor_check_varlist.append(tk.IntVar())
+            self.motor_gain_entr_varlist.append(tk.StringVar())
             if mot % 2 == 0:
                 str_help = str(mot + 1)
             elif mot % 2 == 1:
                 str_help = str(mot - 1)
-            self.motor_check_btn_list.append(tk.Checkbutton(self.prof_edit_frame, text=('M' + str_help),
-                                                            variable=self.motor_check_varlist[mot], onvalue=True,
-                                                            offvalue=False, height=1, width=4))
-            self.motor_check_btn_list[mot].grid(column=(no_columns + mot % 2), row=(1 + int(mot / 2)), sticky='W')
-        # ------- Add Ok and Remove buttons
-        self.prof_Ok_btn = tk.Button(self.prof_edit_frame, text='Ok', width=4, command=self.prof_ok)
-        self.prof_Ok_btn.grid(column=4, row=4, sticky='E', padx=2, pady=2)
-        self.prof_del_btn = tk.Button(self.prof_edit_frame, text='Remove', width=8, command=self.prof_del)
-        self.prof_del_btn.grid(column=5, row=4, sticky='W', padx=2, pady=2)
+            self.motor_check_btn_list.append(tk.Checkbutton(self.param_edit_frame, text=('M' + str_help),
+                                                            variable=self.motor_check_varlist[mot],
+                                                            command=self.chk_motor_btn_and_gain,
+                                                            onvalue=1, offvalue=0, height=1, width=2))
+            self.motor_check_btn_list[mot].grid(column=(no_columns + 1 + mot % 2), row=(1 + int(mot / 2)), sticky='W')
+            self.motor_gain_entr_list.append(tk.Entry(self.param_edit_frame,
+                                                      textvariable=self.motor_gain_entr_varlist[mot],
+                                                      width=4))
+            self.motor_gain_entr_list[mot].grid(column=(no_columns+entr_col_list[mot]), row=(1+int(mot/2)),
+                                                sticky=pos_list[mot], padx=3, pady=1)
+            self.motor_gain_entr_varlist[mot].set(1.0)
+            self.motor_gain_entr_list[mot].config(state=tk.DISABLED)
+        # ----- Add resonance freq parameter entries
+        #  -- res_enabled - checkbox -----------
+        self.mod_check_var = tk.IntVar()
+        self.mod_check_btn = tk.Checkbutton(self.param_edit_frame, text='Modulator', variable=self.mod_check_var,
+                                            command=self.chk_motor_btn_and_gain, onvalue=True, offvalue=False)
+        self.mod_check_btn.grid(column=1, row=2, rowspan=2, sticky='W', padx=2, pady=2)
+        self.mod_check_var.set(False)
+        self.mod_lbl_period = tk.Label(self.param_edit_frame, text='period [s]')
+        self.mod_lbl_period.grid(column=2, row=2, sticky='N', padx=2, pady=2)
+        self.mod_lbl_period.config(state=tk.DISABLED)
+        self.mod_lbl_ratio = tk.Label(self.param_edit_frame, text='ratio [<1.0]')
+        self.mod_lbl_ratio.grid(column=3, row=2, sticky='N', padx=2, pady=2)
+        self.mod_lbl_ratio.config(state=tk.DISABLED)
+        self.mod_lbl_ampl = tk.Label(self.param_edit_frame, text='ampl [<1.0]')
+        self.mod_lbl_ampl.grid(column=4, row=2, sticky='N', padx=2, pady=2)
+        self.mod_lbl_ampl.config(state=tk.DISABLED)
+
+        self.mod_period_var = tk.StringVar()
+        self.mod_entr_period = tk.Entry(self.param_edit_frame, textvariable=self.mod_period_var, width=4)
+        self.mod_entr_period.grid(column=2, row=3, sticky='N', padx=2, pady=2)
+        self.mod_period_var.set(0.0)
+        self.mod_entr_period.config(state=tk.DISABLED)
+        self.mod_ratio_var = tk.StringVar()
+        self.mod_entr_ratio = tk.Entry(self.param_edit_frame, textvariable=self.mod_ratio_var, width=4)
+        self.mod_entr_ratio.grid(column=3, row=3, sticky='N', padx=2, pady=2)
+        self.mod_ratio_var.set(0.0)
+        self.mod_entr_ratio.config(state=tk.DISABLED)
+        self.mod_ampl_var = tk.StringVar()
+        self.mod_entr_ampl = tk.Entry(self.param_edit_frame, textvariable=self.mod_ampl_var, width=4)
+        self.mod_entr_ampl.grid(column=4, row=3, sticky='N', padx=2, pady=2)
+        self.mod_ampl_var.set(0.0)
+        self.mod_entr_ampl.config(state=tk.DISABLED)
+
+        self.mod_lbl_offset1 = tk.Label(self.param_edit_frame, text='offset1 [<1.0]')
+        self.mod_lbl_offset1.grid(column=2, row=4, sticky='N', padx=2, pady=2)
+        self.mod_lbl_offset1.config(state=tk.DISABLED)
+        self.mod_lbl_offset2 = tk.Label(self.param_edit_frame, text='offset2 [<1.0]')
+        self.mod_lbl_offset2.grid(column=3, row=4, sticky='N', padx=2, pady=2)
+        self.mod_lbl_offset2.config(state=tk.DISABLED)
+        self.mod_lbl_rand_ampl = tk.Label(self.param_edit_frame, text='rand_ampl [<1.0]')
+        self.mod_lbl_rand_ampl.grid(column=4, row=4, sticky='N', padx=2, pady=2)
+        self.mod_lbl_rand_ampl.config(state=tk.DISABLED)
+        # --- res - entries
+        self.mod_offset1_var = tk.StringVar()
+        self.mod_entr_offset1 = tk.Entry(self.param_edit_frame, textvariable=self.mod_offset1_var, width=4)
+        self.mod_entr_offset1.grid(column=2, row=5, sticky='N', padx=2, pady=2)
+        self.mod_offset1_var.set(0.0)
+        self.mod_entr_offset1.config(state=tk.DISABLED)
+        self.mod_offset2_var = tk.StringVar()
+        self.mod_entr_offset2 = tk.Entry(self.param_edit_frame, textvariable=self.mod_offset2_var, width=4)
+        self.mod_entr_offset2.grid(column=3, row=5, sticky='N', padx=2, pady=2)
+        self.mod_offset2_var.set(0.0)
+        self.mod_entr_offset2.config(state=tk.DISABLED)
+        self.mod_rand_ampl_var = tk.StringVar()
+        self.mod_entr_rand_ampl = tk.Entry(self.param_edit_frame, textvariable=self.mod_rand_ampl_var, width=4)
+        self.mod_entr_rand_ampl.grid(column=4, row=5, sticky='N', padx=2, pady=2)
+        self.mod_rand_ampl_var.set(0.0)
+        self.mod_entr_rand_ampl.config(state=tk.DISABLED)
+
+        self.rand_check_var = tk.IntVar()
+        self.rand_check_btn = tk.Checkbutton(self.param_edit_frame, text='Rand motors\n separately',
+                                             variable=self.rand_check_var, command=self.chk_motor_btn_and_gain,
+                                             onvalue=True, offvalue=False)
+        self.rand_check_btn.grid(column=4, row=6, rowspan=2, sticky='W', padx=2, pady=2)
+        self.rand_check_var.set(False)
+        self.rand_check_btn.config(state=tk.DISABLED)
+        # random start time
+        self.rand_starttime_check_var = tk.IntVar()
+        self.rand_starttime_check_btn = tk.Checkbutton(self.param_edit_frame, text='Random\n start time',
+                                                       variable=self.rand_starttime_check_var,
+                                                       command=self.chk_motor_btn_and_gain,
+                                                       onvalue=True, offvalue=False)
+        self.rand_starttime_check_btn.grid(column=3, row=6, rowspan=2, sticky='W', padx=2, pady=2)
+        self.rand_starttime_check_var.set(False)
+        self.rand_starttime_check_btn.config(state=tk.DISABLED)
+
+        # ---- Modulator - entry labels
+
+        # ---- add function Start/stop test button, label text and entries
+        self.test_lbl = tk.Label(self.param_edit_frame, text='actual')
+        self.test_lbl.grid(column=0, row=2, sticky='N', padx=2, pady=2)
+        self.test_entry_var = tk.StringVar()
+        self.test_entry = tk.Entry(self.param_edit_frame, textvariable=self.test_entry_var, justify='center', width=6)
+        self.test_entry.grid(column=0, row=3, sticky='N', padx=2, pady=2)
+        self.test_entry.bind('<Return>', self.update_testing)
+        self.test_entry_var.set(0.0)
+        self.test_lbl2 = tk.Label(self.param_edit_frame, text='Test parameter')
+        self.test_lbl2.grid(column=0, row=4, sticky='N', padx=2, pady=2)
+        self.test_btn_startstop = tk.Button(self.param_edit_frame, text='Start', command=self.start_stop_test,
+                                            width=5)
+        self.test_btn_startstop.grid(column=0, row=5, sticky='N', padx=2, pady=2)
+
+        self.test_startstop_status = False
+
+        self.act_mot_frame = tk.Frame(self.prof_edit_frame)
+        self.act_mot_frame.grid(column=1, row=0, columnspan=3, sticky='W', padx=0, pady=0)
+        self.act_mot_frame.configure(highlightbackground=bg2, highlightthickness=2)
+        # --- add actual motor speed entries and labels
+        m_act_label = tk.Label(self.act_mot_frame, text='Motor speeds')
+        m_act_label.grid(column=0, row=0, columnspan=4, padx=8, pady=2)
+        # m_act_label.configure(bg=bg)
+        col_list = [3, 0, 3, 0, 3, 0, 3, 0]
+        entr_col_list = [2, 1, 2, 1, 2, 1, 2, 1]
+        self.m_act_mot_var_list = []
+        self.m_act_mot_list = []
+        self.m_lbl_list = []
+        for mot in range(8):
+            self.m_lbl_list.append(tk.Label(self.act_mot_frame, text=('M' + str(mot))))
+            self.m_lbl_list[mot].grid(column=col_list[mot], row=(1+int(mot/2)))
+
+            self.m_act_mot_var_list.append(tk.StringVar())
+            self.m_act_mot_list.append(tk.Entry(self.act_mot_frame,
+                                                textvariable=self.m_act_mot_var_list[mot], width=3))
+            self.m_act_mot_list[mot].grid(column=entr_col_list[mot], row=(1+int(mot/2)))
+            self.m_act_mot_var_list[mot].set(0)
+            self.m_act_mot_list[mot].config(state=tk.DISABLED)
+
+        # ------- Add Ok, Cancel and Remove buttons
+        self.prof_Ok_btn = tk.Button(self.param_edit_frame, text='Ok', width=4, command=self.prof_ok)
+        self.prof_Ok_btn.grid(column=7, row=6, sticky='E', padx=2, pady=2)
+        self.prof_Cancel_btn = tk.Button(self.param_edit_frame, text='Cancel', width=6, command=self.prof_cancel)
+        self.prof_Cancel_btn.grid(column=8, row=6, sticky='E', padx=2, pady=2)
+        self.prof_del_btn = tk.Button(self.param_edit_frame, text='Remove', width=8, command=self.prof_del)
+        self.prof_del_btn.grid(column=9, row=6, columnspan=2, sticky='E', padx=2, pady=2)
         # hide this grid as default
         self.prof_edit_frame.grid_remove()
     # ------------- end of class Prof_window(tk.Frame) init ------------------------------------------
 
-    # def get_motor_calibration_table(self, filename_table):
-    #     mot_gain_list = []
-    #     motor_gain_str = filename_table[3][1]
-    #     motor_gain_str = motor_gain_str[1:-1]
-    #     mot_gain_str_list = list(motor_gain_str.split(','))
-    #     for cell in mot_gain_str_list:
-    #         mot_gain_list.append(float(cell))
-    #     return mot_gain_list
+    def prof_cancel(self):
+        self.prof_edit_frame.grid_remove()
+        self.combo_select_profile.config(state=tk.NORMAL)
+        self.combo_select_prof_par.config(state=tk.NORMAL)
+        self.combo_del_prof_par.config(state=tk.NORMAL)
+
+    def start_stop_test(self):
+        self.test_startstop_status = not self.test_startstop_status
+        if self.test_startstop_status:
+            print(' Test started')
+        self.update_testing()
+
+    def update_testing(self, event=None):
+
+        parameter_name = ''
+        if self.test_startstop_status:
+            if not self.instances_created:
+
+                self.udp_instance = udp.CondorUDP(self.ser)
+                self.instances_created = True
+            self.test_btn_startstop.config(text='Stop')
+          # --- gather all parameters from param_edit frame => call get_test_parameters function
+            data_table = self.get_test_parameters()
+            parameter_name = data_table[1][1]
+            dict1 = self.udp_instance.condor_udp_data_arrays()
+            dict1[data_table[1][1]][data_table[0][0]] = data_table[1][0]
+            for col in range(2, len(data_table[1])):
+                dict1[data_table[1][1]][data_table[0][col]] = data_table[1][col]
+            self.test_lock.acquire()
+            while not self.q_data_out.empty():
+                x = self.q_data_out.get()
+            self.q_data_out.put(self.test_startstop_status)
+            self.q_data_out.put(dict1)
+            self.q_data_out.put(parameter_name)
+            self.test_lock.release()
+            if not self.test_thread_created:
+                self.t1 = threading.Thread(target=self.test_parameter_function)
+                self.t1.daemon = True
+                self.t1.start()
+                self.test_thread_created = True
+
+            if not self.q_data_in.empty():
+                self.test_lock.acquire()
+                motor_str = self.q_data_in.get()
+                self.test_lock.release()
+                motor_str_list = list(motor_str[:-1].split('\r'))
+                motor_speed_list = []
+                for mot in range(len(motor_str_list)):
+                    motor_speed_list.append(motor_str_list[mot][2:])
+                    self.m_act_mot_var_list[mot].set(motor_speed_list[mot])
+                # start motor string here !
+
+            self.after(50, self.update_testing)
+        # --- stop test function ----------
+        if not self.test_startstop_status:
+            dict1 = {}
+            print(' Test stopped')
+            self.test_lock.acquire()
+            while not self.q_data_out.empty():
+                x = self.q_data_out.get()
+            self.q_data_out.put(self.test_startstop_status)
+            self.q_data_out.put(dict1)
+            self.q_data_out.put(parameter_name)
+            self.test_lock.release()
+            for mot in range(8):
+                self.m_act_mot_var_list[mot].set(0)
+                self.test_btn_startstop.config(text='Start')
+            # --- stop all motors and stop test function
+            self.test_btn_startstop.config(text='Start')
+            self.test_thread_created = False
+
+    def test_parameter_function(self):
+        test_startstop_status = True
+        dict_founded = False
+        table_created = False
+        if self.ser.isopen:
+            self.ser.Close()
+
+        dict1 = {}
+        start_time_table = []
+        start_time = time.time()
+        # start_time_table.append(start_time)
+        name_row = ['rand_start', 'rand_counter', 'rand_period', 'rand_ratio']
+        parameter_name = ''
+        for mot in range(8):
+            name_row.append('rand_M' + str(mot))
+        rand_start_table = []
+        rand_start_table.append(name_row)
+        while test_startstop_status:
+            self.test_lock.acquire()
+            if not self.q_data_out.empty():
+                test_startstop_status = self.q_data_out.get()
+                dict1 = self.q_data_out.get()
+                parameter_name = self.q_data_out.get()
+                for row in range(len(dict1)):
+                    if not table_created:
+                        rand_start_table.append([0.0, 0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+                        start_time_table.append(start_time)
+                if not table_created:
+                    table_created = True
+                dict_founded = True
+            self.test_lock.release()
+
+            if test_startstop_status and dict_founded:
+                dict1 = self.udp_instance.data_to_motor_ph1(dict1)
+                motors_table, start_time_table, rand_start_table = \
+                    self.udp_instance.data_to_motor_ph2(dict1, start_time_table, rand_start_table, parameter_name)
+                motor_str = self.udp_instance.create_ff_string(motors_table)
+                if not self.ser.isopen:
+                    self.ser.Open(self.ser.comport, self.ser.baud)
+                if self.ser.isopen:
+                    self.ser.Send(motor_str)
+
+                self.test_lock.acquire()
+                while not self.q_data_in.empty():
+                    x = self.q_data_in.get()
+                self.q_data_in.put(motor_str)
+                self.test_lock.release()
+                time.sleep(0.015)
+
+        print('thread will stop')
+        if self.ser.isopen:
+            self.ser.Send('M00\rM10\rM20\rM30\rM40\rM50\rM60\rM70\r')
+            self.ser.Close()
+
+
+    def get_test_parameters(self):
+        parameter_list = []
+        parameter_names =[]
+        parameter_table = []
+        parameter_names.append('actual')
+        parameter_list.append(self.test_entry_var.get())
+        parameter_names.extend(self.profile_parameter_list[0])
+        parameter_list.append(self.profile_parameter.get())
+        for col in range(len(self.edit_profile_var_list)):
+            parameter_list.append(self.edit_profile_var_list[col].get())
+        str_motors = self.motor_checkboxes_to_str()
+        parameter_list.append(str_motors)
+        for mot in range(8):
+
+            parameter_list.append(self.motor_gain_entr_varlist[mot].get())
+        # --- Modulator parameters
+        parameter_list.append(self.mod_check_var.get())
+        parameter_list.append(self.mod_period_var.get())
+        parameter_list.append(self.mod_ratio_var.get())
+        parameter_list.append(self.mod_ampl_var.get())
+        parameter_list.append(self.mod_offset1_var.get())
+        parameter_list.append(self.mod_offset2_var.get())
+        parameter_list.append(self.mod_rand_ampl_var.get())
+        # ----- random function parameters
+        parameter_list.append(self.rand_check_var.get())
+        parameter_list.append(self.rand_starttime_check_var.get())
+        # # --- add real True/False selection here later
+        parameter_table.append(parameter_names)
+        parameter_table.append(parameter_list)
+
+        return parameter_table
+
+    def chk_motor_btn_and_gain(self, event=None):
+        mot_real = 0
+        for mot in range(8):
+            if mot % 2 == 0:
+                mot_real = mot + 1
+            elif mot % 2 == 1:
+                mot_real = mot - 1
+            status = self.motor_check_varlist[mot_real].get()
+            if status:
+                self.motor_gain_entr_list[mot].config(state=tk.NORMAL)
+            elif not status:
+                self.motor_gain_entr_list[mot].config(state=tk.DISABLED)
+            status_mod = self.mod_check_var.get()
+            status_rand = self.rand_check_var.get()
+            if status_mod:
+                self.set_mod('NORMAL')
+
+            elif not status_mod:
+                self.set_mod('DISABLED')
+
+    def set_mod(self, state):
+        if state == 'NORMAL':
+            self.mod_check_var.set(True)
+            self.mod_lbl_period.config(state=tk.NORMAL)
+            self.mod_entr_period.config(state=tk.NORMAL)
+            self.mod_lbl_ratio.config(state=tk.NORMAL)
+            self.mod_entr_ratio.config(state=tk.NORMAL)
+            self.mod_lbl_ampl.config(state=tk.NORMAL)
+            self.mod_entr_ampl.config(state=tk.NORMAL)
+            self.mod_lbl_offset1.config(state=tk.NORMAL)
+            self.mod_entr_offset1.config(state=tk.NORMAL)
+            self.mod_lbl_offset2.config(state=tk.NORMAL)
+            self.mod_entr_offset2.config(state=tk.NORMAL)
+            self.mod_lbl_rand_ampl.config(state=tk.NORMAL)
+            self.mod_entr_rand_ampl.config(state=tk.NORMAL)
+            self.rand_check_btn.config(state=tk.NORMAL)
+            self.rand_starttime_check_btn.config(state=tk.NORMAL)
+
+        elif state == 'DISABLED':
+            self.mod_check_var.set(False)
+            self.mod_lbl_period.config(state=tk.DISABLED)
+            self.mod_entr_period.config(state=tk.DISABLED)
+            self.mod_lbl_ratio.config(state=tk.DISABLED)
+            self.mod_entr_ratio.config(state=tk.DISABLED)
+            self.mod_lbl_ampl.config(state=tk.DISABLED)
+            self.mod_entr_ampl.config(state=tk.DISABLED)
+            self.mod_lbl_offset1.config(state=tk.DISABLED)
+            self.mod_entr_offset1.config(state=tk.DISABLED)
+            self.mod_lbl_offset2.config(state=tk.DISABLED)
+            self.mod_entr_offset2.config(state=tk.DISABLED)
+            self.mod_lbl_rand_ampl.config(state=tk.DISABLED)
+            self.mod_entr_rand_ampl.config(state=tk.DISABLED)
+            self.rand_check_btn.config(state=tk.DISABLED)
+            self.rand_starttime_check_btn.config(state=tk.DISABLED)
+
+    def set_random(self, state):
+        if state == 'NORMAL':
+            self.rand_check_var.set(True)
+            self.mod_lbl_period.config(state=tk.NORMAL)
+            self.mod_entr_period.config(state=tk.NORMAL)
+            self.mod_lbl_ratio.config(state=tk.NORMAL)
+            self.mod_entr_ratio.config(state=tk.NORMAL)
+            self.mod_lbl_ampl.config(state=tk.NORMAL)
+            self.mod_entr_ampl.config(state=tk.NORMAL)
+            self.mod_check_btn.config(state=tk.DISABLED)
+        elif state == 'DISABLED':
+            self.rand_check_var.set(False)
+            self.mod_lbl_period.config(state=tk.DISABLED)
+            self.mod_entr_period.config(state=tk.DISABLED)
+            self.mod_lbl_ratio.config(state=tk.DISABLED)
+            self.mod_entr_ratio.config(state=tk.DISABLED)
+            self.mod_lbl_ampl.config(state=tk.DISABLED)
+            self.mod_entr_ampl.config(state=tk.DISABLED)
+            self.mod_check_btn.config(state=tk.NORMAL)
 
     def callback_monFunc(self, event):
         self.load_monwin_file()
@@ -279,10 +655,17 @@ class Prof_window(tk.Frame):
 
     def callback_edit_profFunc(self, event):
         self.prof_edit_or_del = True
+        self.combo_select_profile.config(state=tk.DISABLED)
+        self.combo_select_prof_par.config(state=tk.DISABLED)
+        self.combo_del_prof_par.config(state=tk.DISABLED)
+        self.mod_check_var.set(False)
         self.edit_remove_prof_para()
+        self.chk_motor_btn_and_gain()
 
     def callback_add_profFunc(self, event):
         self.prof_edit_or_del = False
+        self.mod_check_var.set(False)
+        self.combo_del_prof_par.config(state=tk.DISABLED)
         self.edit_remove_prof_para()
 
     def update_add_mon_par_list(self):
@@ -356,15 +739,33 @@ class Prof_window(tk.Frame):
             index = len(self.profile_parameter_list) - 2
             #  add parameter name to list
             self.profile_parameter_list[index + 1][0] = self.profile_parameter.get()
-        no_columns = len(self.profile_parameter_list[0])
-        for col in range(no_columns - 2):
+        no_columns = len(self.edit_profile_var_list)
+        for col in range(no_columns):
             value = self.edit_profile_var_list[col].get()
             self.profile_parameter_list[index + 1][col + 1] = value
         str_motor = self.motor_checkboxes_to_str()
-        self.profile_parameter_list[index + 1][no_columns - 1] = str_motor
+        self.profile_parameter_list[index + 1][no_columns + 1] = str_motor
+        #  -----   motor gains
+        start_col = no_columns + 2
+        for mot in range(8):
+            self.profile_parameter_list[index + 1][start_col + mot] = self.motor_gain_entr_varlist[mot].get()
+        start_col = start_col + 8
+        # mod_enabled
+        self.profile_parameter_list[index + 1][start_col] = str(self.mod_check_var.get())
+        self.profile_parameter_list[index + 1][start_col+1] = self.mod_period_var.get()
+        self.profile_parameter_list[index + 1][start_col + 2] = self.mod_ratio_var.get()
+        self.profile_parameter_list[index + 1][start_col + 3] = self.mod_ampl_var.get()
+        self.profile_parameter_list[index + 1][start_col + 4] = self.mod_offset1_var.get()
+        self.profile_parameter_list[index + 1][start_col + 5] = self.mod_offset2_var.get()
+        self.profile_parameter_list[index + 1][start_col + 6] = self.mod_rand_ampl_var.get()
+        self.profile_parameter_list[index + 1][start_col + 7] = str(self.rand_check_var.get())
+        self.profile_parameter_list[index + 1][start_col + 8] = str(self.rand_starttime_check_var.get())
         self.update_profwin()
         self.prof_edit_frame.grid_remove()
         self.prof_edit_or_del = False
+        self.combo_select_profile.config(state=tk.NORMAL)
+        self.combo_select_prof_par.config(state=tk.NORMAL)
+        self.combo_del_prof_par.config(state=tk.NORMAL)
 
     def prof_del(self):
         index = self.combo_del_prof_par.current()
@@ -374,6 +775,9 @@ class Prof_window(tk.Frame):
         self.profile_param_names.pop(index)
         self.update_profwin()
         self.prof_edit_frame.grid_remove()
+        self.combo_select_profile.config(state=tk.NORMAL)
+        self.combo_select_prof_par.config(state=tk.NORMAL)
+        self.combo_del_prof_par.config(state=tk.NORMAL)
 
     def motor_checkboxes_to_str(self):
         motor_list = []
@@ -426,17 +830,24 @@ class Prof_window(tk.Frame):
             parameter = self.combo_select_prof_par.get()
             self.profile_param_names.append(parameter)
         self.profile_parameter.set(parameter)
-        no_columns = len(self.profile_parameter_list[0])
-        for col in range(no_columns - 2):
-            value = '0'
+        no_columns = len(self.edit_profile_var_list)
+        value_list =['1', '0.0', '0.01', '10', '20']
+        value_len = len(value_list)
+        for col in range(value_len, no_columns):
+            value_list.append('0')
+        for col in range(no_columns):
             if self.prof_edit_or_del:
-                value = self.profile_parameter_list[index + 1][col + 1]
-            self.edit_profile_var_list[col].set(value)
+                value_list[col] = self.profile_parameter_list[index + 1][col + 1]
+            self.edit_profile_var_list[col].set(value_list[col])
+        if not self.prof_edit_or_del:
+            self.mod_check_var.set('0')
+            self.combo_select_profile.config(state=tk.DISABLED)
+            self.combo_select_prof_par.config(state=tk.DISABLED)
         # update motor checkboxes
         motor_str = ''
         motor_list = 0
         if self.prof_edit_or_del:
-            motor_str = self.profile_parameter_list[index + 1][no_columns - 1]
+            motor_str = self.profile_parameter_list[index + 1][no_columns + 1]
         no_motors = len(motor_str)
         if no_motors > 0:
             motor_list = list(motor_str.split('M'))
@@ -451,6 +862,36 @@ class Prof_window(tk.Frame):
                 elif mot_index % 2 == 1:
                     mot_index = mot_index - 1
                 self.motor_check_varlist[mot_index].set(True)
+        #  -- update motor gains
+        start_col = no_columns + 2
+        for mot in range(8):
+            if self.prof_edit_or_del:
+                self.motor_gain_entr_varlist[mot].set(self.profile_parameter_list[index+1][start_col+mot])
+            if not self.prof_edit_or_del:
+                self.motor_gain_entr_varlist[mot].set('1.0')
+        start_col = start_col + 8
+        # modulator selection
+        if self.prof_edit_or_del:
+            self.mod_check_var.set(self.profile_parameter_list[index+1][start_col])
+            self.mod_period_var.set(self.profile_parameter_list[index+1][start_col+1])
+            self.mod_ratio_var.set(self.profile_parameter_list[index + 1][start_col + 2])
+            self.mod_ampl_var.set(self.profile_parameter_list[index + 1][start_col + 3])
+            self.mod_offset1_var.set(self.profile_parameter_list[index + 1][start_col + 4])
+            self.mod_offset2_var.set(self.profile_parameter_list[index + 1][start_col + 5])
+            self.mod_rand_ampl_var.set(self.profile_parameter_list[index + 1][start_col + 6])
+            self.rand_check_var.set(self.profile_parameter_list[index + 1][start_col + 7])
+            self.rand_starttime_check_var.set(self.profile_parameter_list[index + 1][start_col + 8])
+            # add rand_start_time value here
+        if not self.prof_edit_or_del:
+            self.mod_check_var.set(False)
+            self.mod_period_var.set('0.0')
+            self.mod_ratio_var.set('0.0')
+            self.mod_ampl_var.set('0.0')
+            self.mod_offset1_var.set('0.0')
+            self.mod_offset2_var.set('0.0')
+            self.mod_rand_ampl_var.set('0.0')
+            self.rand_check_var.set(False)
+            self.rand_starttime_check_var.set(False)
 
     def load_profwin_file(self):
         profile_list = []
@@ -491,13 +932,15 @@ class Prof_window(tk.Frame):
             pass
 
     def load_all_parameters(self):
+        datadict = {}
         datadict = udp.CondorUDP.condor_udp_data_arrays(self.master)
         parameter_list = list(datadict.keys())
         return parameter_list
 
     def update_profwin(self):
         no_rows = len(self.profile_parameter_list)
-        no_columns = len(self.profile_parameter_list[0])
+        # no_columns = len(self.profile_parameter_list[0])
+        no_columns = len(self.text_prof_param)
         for col in range(no_columns):
             self.text_prof_param[col].config(state=tk.NORMAL)
             self.text_prof_param[col].delete('1.0', tk.END)
@@ -535,7 +978,7 @@ class Prof_window(tk.Frame):
         if not self.save_as_or_not:
             filename = self.combo_select_profile.get()
             # ---- confirm overwrite -----------
-            ok_or_not = messagebox.askokcancel(title=filename, message='Do you like to update this file?')
+            ok_or_not = messagebox.askokcancel(parent=self, title=filename, message='Do you like to update this file?')
         elif self.save_as_or_not:
             filename = filee
             ok_or_not = True
@@ -552,11 +995,15 @@ class Prof_window(tk.Frame):
 
     def save_as_prof(self):
         this_dir = os.getcwd()
-        directory = filedialog.asksaveasfile(initialdir=this_dir, filetypes=[('Profile', '*.prof')],
+        directory = filedialog.asksaveasfile(parent=self, initialdir=this_dir, filetypes=[('Profile', '*.prof')],
                                              defaultextension='.prof')
-        filename = os.path.basename(directory.name)
-        self.save_as_or_not = True
-        self.save_prof(filename)
+        if not directory == None:
+            filename = os.path.basename(directory.name)
+            self.save_as_or_not = True
+            self.save_prof(filename)
+        elif directory == None:
+            self.save_as_or_not = False
+
 
     def save_mon(self, filee=None):
         filename = ''
@@ -564,7 +1011,7 @@ class Prof_window(tk.Frame):
         if not self.save_as_or_not:
             filename = self.combo_select_monwin.get()
             # ---- confirm overwrite -----------
-            ok_or_not = messagebox.askokcancel(title=filename, message='Do you like to update this file?')
+            ok_or_not = messagebox.askokcancel(parent=self, title=filename, message='Do you like to update this file?')
         elif self.save_as_or_not:
             filename = filee
             ok_or_not = True
@@ -580,16 +1027,19 @@ class Prof_window(tk.Frame):
 
     def save_as_mon(self):
         this_dir = os.getcwd()
-        directory = filedialog.asksaveasfile(initialdir=this_dir, filetypes=[('Monitoring', '*.mon')],
+        directory = filedialog.asksaveasfile(parent=self, initialdir=this_dir, filetypes=[('Monitoring', '*.mon')],
                                              defaultextension='.mon')
-        filename = os.path.basename(directory.name)
-        self.save_as_or_not = True
-        self.save_mon(filename)
+        if not directory == None:
+            filename = os.path.basename(directory.name)
+            self.save_as_or_not = True
+            self.save_mon(filename)
+        elif directory == None:
+            self.save_as_or_not = False
 
     def del_monfile(self):
         filename = self.combo_select_monwin.get()
         # ---- confirm deleting !!
-        ok_or_not = messagebox.askokcancel(title=filename, message='Do you like to delete this file?')
+        ok_or_not = messagebox.askokcancel(parent=self, title=filename, message='Do you like to delete this file?')
         if ok_or_not:
             os.remove(filename)
             # -- update mon file list --
@@ -604,7 +1054,7 @@ class Prof_window(tk.Frame):
         ok_or_not = False
         filename = self.combo_select_profile.get()
         # ---- confirm deleting !!
-        ok_or_not = messagebox.askokcancel(title=filename, message='Do you like to delete this file?')
+        ok_or_not = messagebox.askokcancel(parent=self, title=filename, message='Do you like to delete this file?')
         if ok_or_not:
             os.remove(filename)
             # -- update prof file list --
@@ -646,6 +1096,9 @@ class Prof_window(tk.Frame):
 
     def client_exit(self):
         self.update_default_ini()
+        port_name, baudrate, comport = ffcom.load_ff_port_data()
+        self.ser.comport = comport
+        self.ser.baud = baudrate
         self.lock.acquire()
         self.q_data.put(True)
         self.lock.release()
@@ -654,21 +1107,7 @@ class Prof_window(tk.Frame):
     def window_name(self, window_name):
         self.master.title(window_name)
 
-    # def read_init_file(self, filename):
-    #     name_table = []
-    #     filename_table =[]
-    #     try:
-    #         with open(filename, 'r') as csv_file:
-    #             filecontent = csv_file.readlines()
-    #             for line in filecontent:
-    #                 current_line = line[:-1]
-    #                 name_table.append(current_line)
-    #     except IOError:
-    #         print("I/O error")
-    #     no_rows = len(name_table)
-    #     for row in range(no_rows):
-    #         filename_table.append(list(name_table[row].split('=')))
-    #     return filename_table
+
 # --------- end of class Prof_window(tk.Frame) ------------------------------------
 
 
@@ -712,11 +1151,61 @@ class Profiler:
     def load_profile_file(self, load_filename):
         data_table = []
         data_temp = self.load_window_new(load_filename)
+        # check if new rows exist
+        str_parameter_list = list(data_temp[0].split(','))
+        if not 'gain_M0' in str_parameter_list:
+            data_temp = self.add_new_columns_to_profilefile(load_filename)
         rows = len(data_temp)
         for row in range(rows):
             line_table = list(data_temp[row].split(','))
             data_table.append(line_table)
         return data_table
+
+    def add_new_columns_to_profilefile(self, load_filename):
+        data_table = []
+        parameter_names = []
+        str_list = []
+        data_temp = self.load_window_new(load_filename)
+        rows = len(data_temp)
+        for row in range(rows):
+            line_table = list(data_temp[row].split(','))
+            data_table.append(line_table)
+        parameter_names = list(data_temp[0].split(','))
+        for col in range(8):
+            parameter_names.append(('gain_M' + str(col)))
+        parameter_names.append('mod_enabled')
+        parameter_names.append('period')
+        parameter_names.append('ratio')
+        parameter_names.append('ampl')
+        parameter_names.append('offset1')
+        parameter_names.append('offset2')
+        parameter_names.append('rand_ampl')
+        parameter_names.append('rand_separately')
+        parameter_names.append('rand_start_enabled')
+        no_cols_old = len(data_table[0])
+        no_cols_new = len(parameter_names)
+        data_table[0] = parameter_names
+        for row in range(1, len(data_table)):
+            # set motor gains to 1.0
+            for col in range(8):
+                data_table[row].append('1.0')
+            for col in range(8, (no_cols_new-no_cols_old)):
+                data_table[row].append('0')
+        len_check = len(data_table[5])
+        # save data to load_file
+        for row in range(len(data_table)):
+            str_temp = ''
+            str_temp = str(data_table[row][0])
+            for col in range(1, len(data_table[row])):
+                str_temp = str_temp + ',' + str(data_table[row][col])
+            str_list.append(str_temp)
+        try:
+            with open(load_filename, 'w') as csvfile:
+                for row in str_list:
+                    csvfile.writelines("%s\n" % row)
+        except IOError:
+            print("I/O error")
+        return str_list
 
     def load_window_new(self, load_filename):
         name_table = []
@@ -746,7 +1235,6 @@ class Profiler:
         try:
             with open(save_profile, 'w') as csvfile:
                 csvfile.writelines(str_temp)
-                # str_temp = ''
                 for row in range(len(profile_list)):
                     str_temp = ''
                     for col in range(len(profile_list[0])-1):
@@ -770,7 +1258,7 @@ if __name__ == '__main__':
     q_data = queue.Queue()
     lock = threading.Lock()
     root = tk.Tk()
-    # root.geometry("1350x750+500+300")
-    app = Prof_window(root, q_data, lock)
+    ser = ffcom.SerialPort()
+    app = Prof_window(root, q_data, lock, ser)
     app.window_name('Profile window')
     root.mainloop()
