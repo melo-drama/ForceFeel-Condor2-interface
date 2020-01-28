@@ -132,6 +132,14 @@ class CondorUDP:
                                         'filtercoeff': FILTER_COEF, 'act_min_limit': ACT_MIN,
                                         'act_max_limit': ACT_MAX, 'mot_min_limit': MOT_MIN,
                                         'mot_max_limit': MOT_MAX, 'M_act': 0, 'motors': ''}
+            data_dict['az_abs'] = {'actual': 0.0, 'act_min': 0.1, 'act_max': 2.0,
+                                        'filtercoeff': FILTER_COEF, 'act_min_limit': ACT_MIN,
+                                        'act_max_limit': ACT_MAX, 'mot_min_limit': MOT_MIN,
+                                        'mot_max_limit': MOT_MAX, 'M_act': 0, 'motors': ''}
+            data_dict['vario_abs'] = {'actual': 0.0, 'act_min': 0.1, 'act_max': 2.0,
+                                   'filtercoeff': FILTER_COEF, 'act_min_limit': ACT_MIN,
+                                   'act_max_limit': ACT_MAX, 'mot_min_limit': MOT_MIN,
+                                   'mot_max_limit': MOT_MAX, 'M_act': 0, 'motors': ''}
         return data_dict
 
     def parser_condor_telemetry(self, strdata, data_dict):
@@ -338,8 +346,12 @@ class CondorUDP:
         if wheelheight < 0.0:
             wheelshake = vxy * surf_rough
         az = math.fabs(float(datadict_filtered['az']['actual']))
+        vario_abs = math.fabs(float(datadict_filtered['vario']['actual']))
+        datadict_filtered['vario_abs']['actual'] = str(vario_abs)
+        datadict_filtered['az_abs']['actual'] = str(az)
+        vario_abs_act_min_limit = float(datadict_filtered['vario_abs']['act_min_limit'])
         turbulence = 0.0
-        if wheelheight > 0.2:
+        if wheelheight > 0.2 and az > vario_abs_act_min_limit:
             turbulence = float(datadict_filtered['turbulencestrength']['actual'])
         turbulence2 = turbulence * az
         datadict_filtered['rollrate_right']['actual'] = str(rollrate_right)
@@ -426,9 +438,9 @@ class CondorUDP:
         period, ratio, ampl = 0.0, 0.0, 0.0
         offset1, offset2, rand_ampl = 0.0, 0.0, 0.0
         motor_mod_gain = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+        motor_all_gain = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
         m_act, mot_min_limit, mot_max_limit = 0.0, 0.0, 0.0
         real_time = time.time()
-        # test!!
 
         for row in range(1, no_rows):
             sub_dict = datadict[self.profile_table[row][0]]
@@ -469,7 +481,7 @@ class CondorUDP:
                                 if 'rand_start_enabled' in sub_dict:
                                     if sub_dict['rand_start_enabled'] == 1:
                                         rand_counter = random.randint(1, 2)
-                                        rand_period = float((random.randint(88, 120) / 100))
+                                        rand_period = float((random.randint(70, 130) / 100))
                                         r_period = period * rand_period
                                         rand_start_table[row + 1][rand_start_table[0].index('rand_period')] = \
                                             rand_period
@@ -481,31 +493,35 @@ class CondorUDP:
                                         rand_start_table[row + 1][rand_start_table[0].index('rand_start')] = \
                                             t_rand_start
                                 if rand_ampl > 0.0:
-                                    rand_range = int(rand_ampl * mot_maxmin)
-                                    rand_gain = random.randint(0, rand_range) / mot_maxmin
+                                    rand_range = int(rand_ampl * mot_max_limit)
+                                    rand_gain = random.randint(0, rand_range) / mot_max_limit
                                 else:
                                     rand_gain = 0.0
                                     rand_ampl = 0.0
                                 rand_m0_index = rand_start_table[0].index('rand_M0')
                                 for mot in range(8):
                                     if int(sub_dict['rand_separately']) == 1:
-                                        rand_gain = random.randint(0, rand_range) / mot_maxmin
+                                        rand_gain = random.randint(0, rand_range) / mot_max_limit
                                     rand_start_table[row + 1][rand_m0_index + mot] = rand_gain
 
                             rand_counter = rand_counter - 1
                             rand_start_table[row + 1][rand_start_table[0].index('rand_counter')] = rand_counter
 
                         t_ratio = r_ratio * r_period
+                        all_gain = 1
                         if actual_time <= t_rand_start:
-                            temp_mod_gain = offset2
+                            temp_mod_gain = 1
+                            all_gain = offset2
                         if t_rand_start < actual_time < (t_ratio + t_rand_start):
                             # ---- math function offset1 + ampl*sin(pi/t_ratio*actual_time) -----
                             temp_mod_gain = offset1 + ampl * math.sin((math.pi / t_ratio) * actual_time)
                         if (t_ratio + t_rand_start) <= actual_time < r_period:
-                            temp_mod_gain = offset2
+                            temp_mod_gain = 1
+                            all_gain = offset2
                         rand_m0_index = rand_start_table[0].index('rand_M0')
                         for mot in range(8):
                             motor_mod_gain[mot] = temp_mod_gain * (1 - rand_start_table[row + 1][rand_m0_index + mot])
+                            motor_all_gain[mot] = all_gain
             if m_act_diff <= 0.0:
                 m_act_diff = 0.0
 
@@ -518,12 +534,14 @@ class CondorUDP:
                     data_index = motors_str.find(str_temp)
                     if data_index >= 0:
                         if m_act_diff > 0.0:
-                            motors_table[row][mot] = int(mot_min_limit + m_act_diff * motor_mod_gain[mot])
+                            motors_table[row][mot] = int((mot_min_limit + m_act_diff * motor_mod_gain[mot]) *
+                                                         motor_all_gain[mot])
                             if motors_table[row][mot] >= 100:
                                 motors_table[row][mot] = int(100)
-                        elif m_act_diff <= 0.0:
-                            motors_table[row][mot] = 0
-
+                            elif motors_table[row][mot] <= 0:
+                                motors_table[row][mot] = int(0)
+                        elif m_act_diff <= 0.0 or motors_table[row][mot] <= 0:
+                            motors_table[row][mot] = int(0)
         return motors_table, start_time_table, rand_start_table
 
     def create_ff_string(self, motors_table):
