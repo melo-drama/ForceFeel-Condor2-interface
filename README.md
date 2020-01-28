@@ -1,3 +1,8 @@
+# Modulator updated (gain ranges extended) and Turbulence trigger changed from z-axis acceleration to vario (updated 28.1.2020)
+- new zip file created (Condor2_shaker_v4.zip)
+- instructions updated
+- master code updated
+
 # Lot's of changes and improvements done - (text updated 24.01.2020)
 - copy all *.exe,*ini, *.mon, *.prof files under same subfolder
 - Read the instruction file condor2_shaker_v3_instructions.pdf
